@@ -1,14 +1,46 @@
+{ // bloc isolé : aucune variable ne fuit vers les autres cartes
 /*
  * Alexa Announce Card (FR)
  * Carte Home Assistant pour les annonces Alexa : boutons d'annonces rapides (scripts) et
  * message personnalisé à envoyer. Style verre, thème clair/sombre automatique, éditeur visuel.
  */
 
-const CARD_VERSION = "1.0.0";
+const CARD_VERSION = "1.1.0";
+
+/* === NUANCE COMMUNE v2 (cartes Johan854) ===
+ * Bloc identique dans toutes les cartes. Options : nuance, nuance_perso, intensite.
+ * nuance "theme" (par défaut) : suit la variable carte-nuance du thème Home Assistant ;
+ * si elle n'existe pas, la carte garde ses couleurs d'origine. Intensité : 0 = neutre, 1 = normal, 2 = très coloré. */
+const GV_NUANCES = [["braise", "Braise (rouge)", "#e0524f"], ["ocean", "Océan (bleu)", "#2f8fd8"], ["lagon", "Lagon (turquoise)", "#1fb5a8"], ["foret", "Forêt (vert)", "#3fae5a"], ["lavande", "Lavande (violet)", "#8a63d8"], ["framboise", "Framboise (rose)", "#e05597"], ["ambre", "Ambre (orange)", "#e8902c"], ["ardoise", "Ardoise (neutre)", "#7d8595"]];
+const GV_DEFAULTS = { nuance: "theme", intensite: 1 };
+const gvAccent = (c) => {
+  const p = c && c.nuance_perso;
+  if (c && c.nuance === "perso") {
+    if (Array.isArray(p) && p.length === 3) return "#" + p.map((v) => Math.max(0, Math.min(255, Math.round(+v || 0))).toString(16).padStart(2, "0")).join("");
+    if (typeof p === "string" && /^#?[0-9a-f]{6}$/i.test(p.trim())) return "#" + p.trim().replace("#", "");
+  }
+  const n = GV_NUANCES.find((x) => x[0] === (c && c.nuance));
+  return n ? n[2] : "var(--carte-nuance)";
+};
+/* Variables posées sur <ha-card> : --g-bg-x (fond dégradé teinté) et --acc-ui-x (couleur d'accent).
+ * Sans nuance (thème sans carte-nuance), elles sont invalides : chaque carte retombe alors sur ses couleurs d'origine. */
+const gvStyle = (c, dark) => {
+  const i = Number(c && c.intensite), ai = Number.isFinite(i) ? Math.max(0, Math.min(2, i)) : 1;
+  const m = (pct, base) => `color-mix(in srgb,var(--acc-ui) ${+(pct * ai).toFixed(1)}%,${base})`;
+  const bg = dark ? `linear-gradient(160deg,${m(5, "#1b1e32")} 0%,${m(11, "#1f1b2c")} 55%,${m(22, "#1c1620")} 100%)`
+    : `linear-gradient(160deg,${m(2, "#f8f9fd")} 0%,${m(5, "#eef1f8")} 55%,${m(11, "#f8f8fa")} 100%)`;
+  return `--acc-ui:${gvAccent(c)};--g-bg-x:${bg};--acc-ui-x:color-mix(in srgb,var(--acc-ui) ${dark ? "80%,#fff" : "82%,#000"})`;
+};
+const GV_FIELDS = [
+  { name: "nuance", selector: { select: { mode: "dropdown", options: [{ value: "theme", label: "Selon le thème (couleurs d'origine)" }, ...GV_NUANCES.map((n) => ({ value: n[0], label: n[1] })), { value: "perso", label: "Personnalisée" }] } } },
+  { name: "nuance_perso", selector: { color_rgb: {} } },
+  { name: "intensite", selector: { number: { min: 0, max: 2, step: 0.1, mode: "slider" } } }];
+const GV_LABELS = { nuance: "Nuance de couleur", nuance_perso: "Couleur personnalisée (nuance « Personnalisée »)", intensite: "Intensité de la nuance" };
+/* === FIN NUANCE COMMUNE === */
 
 const DEFAULTS = {
   title: "Annonces Alexa",
-  theme: "auto", // auto | light | dark
+  theme: "auto", nuance: "theme", intensite: 1, // auto | light | dark
   columns: 0, // 0 = automatique
   buttons: [],
   message_entity: "", // input_text qui contient le message (facultatif)
@@ -129,16 +161,16 @@ class AlexaAnnounceCard extends HTMLElement {
       <style>
         * { box-sizing:border-box; }
         ha-card.dark {
-          --al-text:#f4f6fb; --al-muted:#a9afc0; --al-bg:linear-gradient(160deg,#1b1e32 0%,#241a2a 55%,#2d1519 100%);
+          --al-text:#f4f6fb; --al-muted:#a9afc0; --al-bg:var(--g-bg-x,linear-gradient(160deg,#1b1e32 0%,#241a2a 55%,#2d1519 100%));
           --al-border:rgba(255,255,255,.14); --al-shadow:0 .6em 2em rgba(0,0,0,.35);
           --al-glass:rgba(255,255,255,.07); --al-glass-b:rgba(255,255,255,.13); --al-fill:rgba(255,255,255,.09); --al-fill-b:rgba(255,255,255,.16);
-          --al-acc:#4fc3f7; --al-ok:#3ddc84; --al-err:#ff5a5f;
+          --al-acc:var(--acc-ui-x,#4fc3f7); --al-ok:#3ddc84; --al-err:#ff5a5f;
         }
         ha-card.light {
-          --al-text:#1c2030; --al-muted:#5d6477; --al-bg:linear-gradient(160deg,#f8f9fd 0%,#eef1f8 55%,#f8eff0 100%);
+          --al-text:#1c2030; --al-muted:#5d6477; --al-bg:var(--g-bg-x,linear-gradient(160deg,#f8f9fd 0%,#eef1f8 55%,#f8eff0 100%));
           --al-border:rgba(20,24,40,.12); --al-shadow:0 .4em 1.4em rgba(20,24,40,.12);
           --al-glass:rgba(255,255,255,.7); --al-glass-b:rgba(20,24,40,.1); --al-fill:rgba(20,24,40,.06); --al-fill-b:rgba(20,24,40,.14);
-          --al-acc:#0f8fc4; --al-ok:#1a9d55; --al-err:#d32f35;
+          --al-acc:var(--acc-ui-x,#0f8fc4); --al-ok:#1a9d55; --al-err:#d32f35;
         }
         ha-card { display:flex; flex-direction:column; gap:12px; padding:16px; overflow:hidden; color:var(--al-text);
           border-radius:24px; border:1px solid var(--al-border); background:var(--al-bg); box-shadow:var(--al-shadow); }
@@ -164,7 +196,7 @@ class AlexaAnnounceCard extends HTMLElement {
         .send:active { filter:brightness(.92); } .send.ok { background:var(--al-ok); } .send.ko { background:var(--al-err); color:#fff; }
         .empty { color:var(--al-muted); font-size:.9em; }
       </style>
-      <ha-card class="${dark ? "dark" : "light"}">
+      <ha-card class="${dark ? "dark" : "light"}" style="${gvStyle(this._config, dark)}">
         ${c.title ? `<div class="head"><ha-icon icon="mdi:bullhorn-variant"></ha-icon>${esc(c.title)}</div>` : ""}
         ${btns ? `<div class="grid">${btns}</div>` : `<div class="empty">Ajoutez des boutons d'annonce dans l'éditeur de la carte.</div>`}
         ${c.show_custom && c.send_entity ? `<div class="custom">
@@ -187,7 +219,7 @@ class AlexaAnnounceCard extends HTMLElement {
 }
 
 /* ---------- Éditeur visuel ---------- */
-const LABELS = {
+const LABELS = { ...GV_LABELS,
   title: "Titre", theme: "Thème", columns: "Colonnes (0 = automatique)", show_custom: "Afficher le message personnalisé",
   message_entity: "Champ du message (input_text, facultatif)", send_entity: "Script d'envoi du message personnalisé",
   placeholder: "Texte d'aide du champ", send_label: "Texte du bouton d'envoi",
@@ -236,7 +268,7 @@ class AlexaAnnounceCardEditor extends HTMLElement {
       { type: "grid", name: "", schema: [
         { name: "columns", selector: { number: { min: 0, max: 6, mode: "box" } } },
         { name: "theme", selector: { select: { mode: "dropdown", options: [
-          { value: "auto", label: "Automatique (thème de Home Assistant)" }, { value: "light", label: "Clair" }, { value: "dark", label: "Sombre" } ] } } },
+          { value: "auto", label: "Automatique (thème de Home Assistant)" }, { value: "light", label: "Clair" }, { value: "dark", label: "Sombre" } ] } } }, ...GV_FIELDS,
       ] },
       { name: "show_custom", selector: { boolean: {} } },
       { name: "send_entity", selector: { entity: { domain: "script" } } },
@@ -304,3 +336,4 @@ console.info(
   "color:#fff;background:#0f8fc4;font-weight:700;border-radius:3px 0 0 3px;padding:2px 4px",
   "color:#0f8fc4;background:#fff;font-weight:700;border-radius:0 3px 3px 0;padding:2px 4px"
 );
+}
